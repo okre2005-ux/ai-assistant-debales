@@ -1,69 +1,63 @@
-import { connectDB } from "../lib/db";
+import { cookies } from "next/headers";
+import { redirect } from "next/navigation";
+import { User } from "../models/User";
 import { Project } from "../models/Project";
-import { getCurrentUser } from "../lib/auth";
-import {
-  canAccessAdminDashboard,
-  canAccessProject,
-} from "../access/projectAccess";
+import { ProjectMember } from "../models/ProjectMember";
 
-export async function getProjectBySlug(slug: string) {
-  await connectDB();
-
-  return Project.findOne({ slug });
-}
-
-export async function requireProjectAccess(slug: string) {
-  const user = await getCurrentUser();
-
-  if (!user) {
-    throw new Error("Not logged in");
+export async function requireProjectAccess(slug: string, demoUserEmail?: string) {
+  // If demo user email is provided, use that instead
+  if (demoUserEmail) {
+    // Find or create demo user
+    let user = await User.findOne({ email: demoUserEmail });
+    
+    if (!user) {
+      user = await User.create({
+        email: demoUserEmail,
+        name: demoUserEmail === "admin@debales.ai" ? "Demo Admin" : "Demo Member",
+        role: demoUserEmail === "admin@debales.ai" ? "admin" : "member",
+      });
+    }
+    
+    // Get project
+    const project = await Project.findOne({ slug });
+    
+    if (!project) {
+      throw new Error("Project not found");
+    }
+    
+    return { user, project };
   }
-
-  const project = await getProjectBySlug(slug);
-
+  
+  // Original logic for non-demo users (from your existing code)
+  // Get user from session/cookie
+  const cookieStore = cookies();
+  const userEmail = cookieStore.get("user-email")?.value;
+  
+  if (!userEmail) {
+    redirect("/login");
+  }
+  
+  const user = await User.findOne({ email: userEmail });
+  
+  if (!user) {
+    redirect("/login");
+  }
+  
+  const project = await Project.findOne({ slug });
+  
   if (!project) {
     throw new Error("Project not found");
   }
-
-  const allowed = await canAccessProject(
-    user._id.toString(),
-    project._id.toString()
-  );
-
-  if (!allowed) {
-    throw new Error("No project access");
+  
+  // Check if user has access to this project
+  const member = await ProjectMember.findOne({
+    projectId: project._id,
+    userId: user._id,
+  });
+  
+  if (!member && user.role !== "admin") {
+    redirect("/access-denied");
   }
-
-  return {
-    user,
-    project,
-  };
-}
-
-export async function requireAdminAccess(slug: string) {
-  const user = await getCurrentUser();
-
-  if (!user) {
-    throw new Error("Not logged in");
-  }
-
-  const project = await getProjectBySlug(slug);
-
-  if (!project) {
-    throw new Error("Project not found");
-  }
-
-  const allowed = await canAccessAdminDashboard(
-    user._id.toString(),
-    project._id.toString()
-  );
-
-  if (!allowed) {
-    throw new Error("Admin access required");
-  }
-
-  return {
-    user,
-    project,
-  };
+  
+  return { user, project };
 }
