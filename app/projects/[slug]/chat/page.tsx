@@ -48,3 +48,67 @@ export default async function ChatPage({ params }: ChatPageProps) {
     </main>
   );
 }
+import { redirect } from "next/navigation";
+import { cookies } from "next/headers";
+import { ChatPanel } from "../../../../components/ChatPanel";
+import { ConversationSidebar } from "../../../../components/ConversationSidebar";
+import { ProjectSwitcher } from "../../../../components/ProjectSwitcher";
+import { requireProjectAccess } from "../../../../services/projectService";
+
+type ChatPageProps = {
+  params: Promise<{
+    slug: string;
+  }>;
+};
+
+export default async function ChatPage({ params }: ChatPageProps) {
+  const { slug } = await params;
+
+  // Get the demo user email from cookie
+  const cookieStore = cookies();
+  const demoUserEmail = cookieStore.get("demo-user-email")?.value;
+  
+  console.log("=== CHAT PAGE DEBUG ===");
+  console.log("Demo user email from cookie:", demoUserEmail);
+
+  let data;
+
+  try {
+    // Pass the demo user email to override the default user
+    data = await requireProjectAccess(slug, demoUserEmail);
+  } catch (error) {
+    console.error("Access error:", error);
+    redirect("/login");
+  }
+
+  const { user, project } = data;
+
+  console.log("User from database:", user.email);
+  console.log("Is Admin?", user.email === "admin@debales.ai");
+  console.log("Is Member?", user.email === "member@debales.ai");
+
+  return (
+    <main className="min-h-screen bg-[#080b12] text-white">
+      <header className="border-b border-white/10 bg-white/[0.03] px-6 py-4 backdrop-blur">
+        <div className="flex flex-col justify-between gap-4 lg:flex-row lg:items-center">
+          <div>
+            <p className="text-xs font-medium uppercase tracking-[0.22em] text-cyan-300">
+              AI Sales Assistant
+            </p>
+            <h1 className="mt-1 text-2xl font-semibold">{project.name}</h1>
+            <p className="mt-1 text-sm text-slate-400">
+              Logged in as {user.email} {user.email === "admin@debales.ai" ? "(Admin)" : "(Member)"}
+            </p>
+          </div>
+
+          <ProjectSwitcher projectName={project.name} />
+        </div>
+      </header>
+
+      <div className="grid min-h-[calc(100vh-121px)] grid-cols-[300px_1fr]">
+        <ConversationSidebar slug={slug} />
+        <ChatPanel slug={slug} />
+      </div>
+    </main>
+  );
+}
